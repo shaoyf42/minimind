@@ -9,6 +9,28 @@ import torch.nn as nn
 import math
 
 
+class LayerNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        # 可学习缩放参数 γ（和 RMSNorm 保持一致）
+        self.weight = nn.Parameter(torch.ones(dim))
+        # LayerNorm 额外需要可学习偏移参数 β
+        self.bias = nn.Parameter(torch.zeros(dim))
+
+    def _norm(self, x):
+        # 计算最后一维的均值和方差
+        mean = x.mean(-1, keepdim=True)
+        var = x.var(-1, keepdim=True, unbiased=False)
+        # 标准 LayerNorm 公式
+        return (x - mean) / torch.sqrt(var + self.eps)
+
+    def forward(self, x):
+        # 先归一化，再缩放+偏移，保持精度
+        x_norm = self._norm(x.float()).type_as(x)
+        return self.weight * x_norm + self.bias
+
+
 class RMSNorm(nn.Module):
     def __init__(self, dim, eps=1e-5):
         super().__init__()
@@ -24,11 +46,12 @@ def exp1_gradient_vanishing():
     print("实验1.1：梯度消失演示（无归一化）")
     print("=" * 60)
     torch.manual_seed(42)
-    x = torch.randn(1, 512)
+    hidden_dim = 512
+    x = torch.randn(100, hidden_dim)
+    layers = [nn.Linear(hidden_dim, hidden_dim) for _ in range(8)]
     print(f"初始标准差: {x.std().item():.6f}")
-    for i in range(8):
-        W = torch.randn(512, 512) * 0.5
-        x = x @ W
+    for i, layer in enumerate(layers):
+        x = layer(x)
         x = torch.relu(x)
         print(f"Layer {i}: std={x.std().item():.6f}")
     print("\n结论：无归一化时，标准差快速衰减→梯度消失")
@@ -39,14 +62,15 @@ def exp2_rmsnorm_stabilizes():
     print("实验1.2：RMSNorm稳定训练")
     print("=" * 60)
     torch.manual_seed(42)
-    x = torch.randn(1, 512)
-    norm = RMSNorm(512)
+    hidden_dim = 512
+    x = torch.randn(100, hidden_dim)
+    layers = [nn.Linear(hidden_dim, hidden_dim) for _ in range(8)]
+    norms = [RMSNorm(hidden_dim) for _ in range(8)]
     print(f"初始标准差: {x.std().item():.6f}")
-    for i in range(8):
-        W = torch.randn(512, 512) * 0.5
-        x = norm(x)
-        x = x @ W
+    for i, (layer, norm) in enumerate(zip(layers, norms)):
+        x = layer(x)
         x = torch.relu(x)
+        x = norm(x)
         print(f"Layer {i}: std={x.std().item():.6f}")
     print("\n结论：RMSNorm使标准差保持稳定")
 
