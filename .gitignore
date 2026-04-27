@@ -8,3 +8,7 @@ docs-minimind/
 *.jsonl
 # model weight files
 model_weight/
+# virtual environment
+.venv/
+# checkpoints
+checkpoints/
